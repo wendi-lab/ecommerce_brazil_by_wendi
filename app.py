@@ -100,6 +100,18 @@ st.markdown("""
         width: 100%;
         height: 600px;
     }
+    .correlation-high {
+        color: #28a745;
+        font-weight: bold;
+    }
+    .correlation-medium {
+        color: #ffc107;
+        font-weight: bold;
+    }
+    .correlation-low {
+        color: #dc3545;
+        font-weight: bold;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -737,6 +749,213 @@ class FinalCleanBrazilEcommerceDashboard:
                            f"<span class='ranking-score-bad'>R$ {row['price']:,.0f}</span>"
                            f"</div>", unsafe_allow_html=True)
     
+    def create_simple_trendline(self, x, y):
+        """Membuat trendline sederhana menggunakan linear regression"""
+        try:
+            # Linear regression sederhana
+            coeffs = np.polyfit(x, y, 1)
+            trendline = np.poly1d(coeffs)
+            return trendline(x)
+        except:
+            # Fallback jika error
+            return y
+    
+    def create_review_revenue_correlation_analysis(self, data):
+        """Membuat analisis korelasi antara review score dan revenue"""
+        if 'product_category_name_english' not in data.columns:
+            st.warning("Data kategori produk tidak tersedia untuk analisis korelasi")
+            return
+        
+        st.markdown("### 📈 KORELASI REVIEW SCORE DAN REVENUE")
+        
+        # Aggregate data per kategori produk
+        category_data = data.groupby('product_category_name_english').agg({
+            'review_score': 'mean',
+            'price': 'sum',
+            'order_id': 'count'
+        }).round(3).reset_index()
+        
+        category_data.columns = ['category', 'avg_review', 'total_revenue', 'order_count']
+        
+        # Filter kategori dengan cukup data (minimal 10 order)
+        category_data = category_data[category_data['order_count'] >= 10]
+        
+        if len(category_data) == 0:
+            st.warning("Tidak ada kategori dengan cukup data untuk analisis korelasi")
+            return
+        
+        # Hitung korelasi
+        correlation = category_data['avg_review'].corr(category_data['total_revenue'])
+        
+        # Tampilkan metrik korelasi
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if correlation > 0.7:
+                correlation_class = "correlation-high"
+                interpretation = "Korelasi Positif Kuat"
+            elif correlation > 0.3:
+                correlation_class = "correlation-medium" 
+                interpretation = "Korelasi Positif Sedang"
+            elif correlation > 0:
+                correlation_class = "correlation-low"
+                interpretation = "Korelasi Lemah"
+            else:
+                correlation_class = "correlation-low"
+                interpretation = "Korelasi Negatif"
+                
+            st.markdown(f"""
+            <div class="mini-metric">
+                <div class="metric-value {correlation_class}">{correlation:.3f}</div>
+                <div class="metric-label">{interpretation}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.metric("Jumlah Kategori Dianalisis", len(category_data))
+        
+        with col3:
+            avg_review_all = category_data['avg_review'].mean()
+            st.metric("Rata-rata Review Semua Kategori", f"{avg_review_all:.2f}")
+        
+        # SCATTER PLOT 1: Semua Produk
+        st.markdown("#### 🔍 SCATTER PLOT: SEMUA KATEGORI PRODUK")
+        
+        # Buat scatter plot tanpa trendline LOWESS
+        fig_all = px.scatter(
+            category_data, 
+            x='avg_review', 
+            y='total_revenue',
+            size='order_count',
+            hover_name='category',
+            hover_data={
+                'avg_review': ':.2f',
+                'total_revenue': ':,.0f',
+                'order_count': True
+            },
+            title='Korelasi Review Score vs Revenue - Semua Kategori',
+            labels={
+                'avg_review': 'Rata-rata Review Score',
+                'total_revenue': 'Total Revenue (R$)',
+                'order_count': 'Jumlah Order'
+            }
+        )
+        
+        # Tambahkan trendline sederhana menggunakan linear regression
+        try:
+            x_vals = category_data['avg_review'].values
+            y_vals = category_data['total_revenue'].values
+            
+            # Urutkan berdasarkan x untuk trendline yang rapi
+            sort_idx = np.argsort(x_vals)
+            x_sorted = x_vals[sort_idx]
+            y_sorted = y_vals[sort_idx]
+            
+            # Buat trendline
+            trendline_vals = self.create_simple_trendline(x_sorted, y_sorted)
+            
+            fig_all.add_trace(
+                go.Scatter(
+                    x=x_sorted,
+                    y=trendline_vals,
+                    mode='lines',
+                    name='Trendline',
+                    line=dict(color='red', dash='dash'),
+                    hoverinfo='skip'
+                )
+            )
+        except Exception as e:
+            st.warning(f"Tidak dapat menambahkan trendline: {str(e)}")
+        
+        fig_all.update_layout(
+            height=500,
+            showlegend=True
+        )
+        
+        st.plotly_chart(fig_all, use_container_width=True)
+        
+        # SCATTER PLOT 2: Top 5 Review dan Revenue
+        st.markdown("#### 🏆 SCATTER PLOT: TOP 5 KATEGORI REVIEW & REVENUE")
+        
+        # Ambil top 5 dari masing-masing kategori
+        top_5_review_cats = category_data.nlargest(5, 'avg_review')['category'].tolist()
+        top_5_revenue_cats = category_data.nlargest(5, 'total_revenue')['category'].tolist()
+        
+        # Gabungkan dan hapus duplikat
+        top_cats = list(set(top_5_review_cats + top_5_revenue_cats))
+        top_categories_data = category_data[category_data['category'].isin(top_cats)]
+        
+        # Buat scatter plot untuk top categories
+        fig_top = px.scatter(
+            top_categories_data, 
+            x='avg_review', 
+            y='total_revenue',
+            size='order_count',
+            hover_name='category',
+            hover_data={
+                'avg_review': ':.2f',
+                'total_revenue': ':,.0f',
+                'order_count': True
+            },
+            title='Korelasi Review Score vs Revenue - Top Kategori',
+            labels={
+                'avg_review': 'Rata-rata Review Score',
+                'total_revenue': 'Total Revenue (R$)',
+                'order_count': 'Jumlah Order'
+            },
+            color='category'  # Warna berbeda untuk setiap kategori
+        )
+        
+        fig_top.update_layout(
+            height=500,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=-0.3,
+                xanchor="center",
+                x=0.5
+            )
+        )
+        
+        st.plotly_chart(fig_top, use_container_width=True)
+        
+        # Tampilkan insights
+        st.markdown("#### 💡 INSIGHTS KORELASI")
+        
+        # Cari produk dengan performa terbaik (review tinggi & revenue tinggi)
+        best_performers = category_data[
+            (category_data['avg_review'] >= category_data['avg_review'].quantile(0.75)) &
+            (category_data['total_revenue'] >= category_data['total_revenue'].quantile(0.75))
+        ]
+        
+        # Cari produk dengan review tinggi tapi revenue rendah (opportunity)
+        high_review_low_revenue = category_data[
+            (category_data['avg_review'] >= category_data['avg_review'].quantile(0.75)) &
+            (category_data['total_revenue'] <= category_data['total_revenue'].quantile(0.25))
+        ]
+        
+        col_insight1, col_insight2 = st.columns(2)
+        
+        with col_insight1:
+            st.markdown("**✅ PERFORMER TERBAIK**")
+            st.markdown("Kategori dengan review tinggi dan revenue tinggi:")
+            if len(best_performers) > 0:
+                for _, product in best_performers.head(3).iterrows():
+                    st.markdown(f"- **{product['category']}**")
+                    st.markdown(f"  ⭐ {product['avg_review']:.2f} | 💰 R$ {product['total_revenue']:,.0f}")
+            else:
+                st.markdown("*Tidak ada kategori yang masuk kriteria*")
+        
+        with col_insight2:
+            st.markdown("**🎯 PELUANG BISNIS**")
+            st.markdown("Kategori dengan review tinggi tapi revenue rendah:")
+            if len(high_review_low_revenue) > 0:
+                for _, product in high_review_low_revenue.head(3).iterrows():
+                    st.markdown(f"- **{product['category']}**")
+                    st.markdown(f"  ⭐ {product['avg_review']:.2f} | 💰 R$ {product['total_revenue']:,.0f}")
+            else:
+                st.markdown("*Tidak ada kategori yang masuk kriteria*")
+    
     def create_dashboard(self):
         """Membuat dashboard utama dengan tabs"""
         # Header
@@ -782,7 +1001,15 @@ class FinalCleanBrazilEcommerceDashboard:
         
         with tab3:
             st.markdown("### 📦 PRODUCT PERFORMANCE ANALYSIS")
-            self.display_product_rankings(filtered_data)
+            
+            # Tab untuk product analysis
+            subtab1, subtab2 = st.tabs(["🏆 PRODUCT RANKINGS", "📈 REVIEW-REVENUE CORRELATION"])
+            
+            with subtab1:
+                self.display_product_rankings(filtered_data)
+            
+            with subtab2:
+                self.create_review_revenue_correlation_analysis(filtered_data)
         
         with tab4:
             # Metrics untuk customer spending
