@@ -4,66 +4,113 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
+import os
 
 # Konfigurasi page
 st.set_page_config(
     page_title="Brazil E-Commerce Dashboard",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
-# Custom CSS untuk tampilan yang clean
+# Custom CSS untuk tampilan minimalis
 st.markdown("""
 <style>
     .main-header {
         font-size: 2.5rem;
         color: #1f77b4;
         text-align: center;
-        margin-bottom: 1rem;
+        margin-bottom: 0.5rem;
         font-weight: bold;
     }
-    .filter-section {
+    .mini-metric {
         background: #f8f9fa;
-        padding: 1rem;
-        border-radius: 10px;
-        margin-bottom: 2rem;
+        padding: 0.8rem;
+        border-radius: 8px;
         border-left: 4px solid #1f77b4;
+        margin-bottom: 0.5rem;
+        text-align: center;
     }
-    .metric-card {
-        background: white;
-        padding: 1rem;
-        border-radius: 10px;
-        border-left: 4px solid #1f77b4;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        margin-bottom: 1rem;
+    .metric-value {
+        font-size: 1.2rem;
+        font-weight: bold;
+        color: #1f77b4;
     }
-    .ranking-card {
-        background: white;
-        padding: 1rem;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        margin-bottom: 1rem;
+    .metric-label {
+        font-size: 0.8rem;
+        color: #6c757d;
     }
-    .top-ranking {
+    .ranking-item-top {
+        background: linear-gradient(90deg, #d4edda, #f8f9fa);
+        padding: 0.6rem;
+        margin-bottom: 0.3rem;
+        border-radius: 6px;
         border-left: 4px solid #28a745;
-        background: linear-gradient(90deg, #d4edda, white);
     }
-    .bottom-ranking {
+    .ranking-item-bottom {
+        background: linear-gradient(90deg, #f8d7da, #f8f9fa);
+        padding: 0.6rem;
+        margin-bottom: 0.3rem;
+        border-radius: 6px;
         border-left: 4px solid #dc3545;
-        background: linear-gradient(90deg, #f8d7da, white);
+    }
+    .ranking-number {
+        font-weight: bold;
+        font-size: 1rem;
+        color: #495057;
+    }
+    .ranking-name {
+        font-size: 0.9rem;
+        color: #495057;
+        margin: 0 0.5rem;
+    }
+    .ranking-score {
+        font-weight: bold;
+        font-size: 0.9rem;
+        color: #28a745;
+    }
+    .ranking-score-bad {
+        font-weight: bold;
+        font-size: 0.9rem;
+        color: #dc3545;
+    }
+    .segment-card {
+        background: white;
+        padding: 1rem;
+        border-radius: 8px;
+        border-left: 4px solid;
+        margin-bottom: 0.5rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .segment-low { border-left-color: #dc3545; background: linear-gradient(90deg, #f8d7da, white); }
+    .segment-medium { border-left-color: #ffc107; background: linear-gradient(90deg, #fff3cd, white); }
+    .segment-high { border-left-color: #007bff; background: linear-gradient(90deg, #cce7ff, white); }
+    .segment-vip { border-left-color: #28a745; background: linear-gradient(90deg, #d4edda, white); }
+    .repeat-card {
+        background: white;
+        padding: 1rem;
+        border-radius: 8px;
+        border-left: 4px solid #6f42c1;
+        margin-bottom: 0.5rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        background: linear-gradient(90deg, #e2e3e5, white);
+    }
+    .full-width-map {
+        width: 100%;
+        height: 600px;
     }
 </style>
 """, unsafe_allow_html=True)
 
-class BrazilEcommerceDashboard:
-    def __init__(self):
-        self.data_url = "https://raw.githubusercontent.com/username/repository-name/main/main_data_sample.csv"
+class FinalCleanBrazilEcommerceDashboard:
+    def __init__(self, data_path="main_data.csv"):
+        self.data_path = data_path
         self.load_data()
         self.setup_brazil_coordinates()
         
     def setup_brazil_coordinates(self):
-        """Setup koordinat manual untuk states Brazil dengan nama panjang"""
+        """Setup koordinat manual untuk states Brazil"""
         self.brazil_states_coords = {
             'Acre': {'lat': -9.0238, 'lon': -70.8120},
             'Alagoas': {'lat': -9.5713, 'lon': -36.7820},
@@ -97,224 +144,533 @@ class BrazilEcommerceDashboard:
     def load_data(self):
         """Load dan preprocess data"""
         try:
-            # Coba load dari GitHub
-            self.df = pd.read_csv(self.data_url)
-            st.success("✅ Data berhasil dimuat dari GitHub!")
-        except:
-            # Fallback ke sample data
-            st.warning("⚠️ Menggunakan sample data...")
-            self.create_sample_data()
-        
-        # Preprocessing data
-        self.preprocess_data()
-        
-    def create_sample_data(self):
-        """Buat sample data untuk testing"""
-        np.random.seed(42)
-        sample_size = 5000
-        
-        # State mapping untuk nama panjang
-        state_mapping = {
-            'SP': 'São Paulo', 'RJ': 'Rio de Janeiro', 'MG': 'Minas Gerais',
-            'RS': 'Rio Grande do Sul', 'PR': 'Paraná', 'SC': 'Santa Catarina',
-            'BA': 'Bahia', 'DF': 'Distrito Federal', 'ES': 'Espírito Santo',
-            'GO': 'Goiás', 'PE': 'Pernambuco', 'CE': 'Ceará',
-            'PA': 'Pará', 'MA': 'Maranhão', 'MS': 'Mato Grosso do Sul',
-            'MT': 'Mato Grosso', 'PB': 'Paraíba', 'RN': 'Rio Grande do Norte',
-            'AL': 'Alagoas', 'SE': 'Sergipe', 'PI': 'Piauí',
-            'RO': 'Rondônia', 'TO': 'Tocantins', 'AC': 'Acre',
-            'AM': 'Amazonas', 'RR': 'Roraima', 'AP': 'Amapá'
-        }
-        
-        states = list(state_mapping.keys())
-        state_full_names = list(state_mapping.values())
-        
-        self.df = pd.DataFrame({
-            'order_id': [f'order_{i}' for i in range(sample_size)],
-            'customer_id': [f'customer_{i%500}' for i in range(sample_size)],
-            'order_status': np.random.choice(['delivered', 'shipped', 'processing'], sample_size),
-            'order_purchase_timestamp': pd.date_range('2022-01-01', periods=sample_size, freq='H'),
-            'customer_unique_id': [f'unique_cust_{i%300}' for i in range(sample_size)],
-            'customer_state': np.random.choice(states, sample_size),
-            'customer_state_full': np.random.choice(state_full_names, sample_size),
-            'price': np.random.lognormal(4, 1, sample_size),
-            'freight_value': np.random.uniform(5, 50, sample_size),
-            'product_category_name_english': np.random.choice([
-                'Electronics', 'Home Appliances', 'Books', 'Sports', 'Fashion',
-                'Health & Beauty', 'Toys', 'Automotive', 'Tools', 'Garden'
-            ], sample_size),
-            'review_score': np.random.choice([1, 2, 3, 4, 5], sample_size, p=[0.05, 0.1, 0.15, 0.3, 0.4]),
-            'payment_value': np.random.lognormal(5, 1, sample_size)
-        })
-        
-        # Ensure price consistency
-        self.df['price'] = self.df['price'].clip(10, 2000)
-        self.df['payment_value'] = self.df['payment_value'].clip(15, 2500)
-    
-    def preprocess_data(self):
-        """Preprocess data"""
-        # Convert timestamp
-        self.df['order_purchase_timestamp'] = pd.to_datetime(
-            self.df['order_purchase_timestamp'], errors='coerce'
-        )
-        
-        # Extract time features
-        self.df['tahun'] = self.df['order_purchase_timestamp'].dt.year
-        self.df['bulan'] = self.df['order_purchase_timestamp'].dt.month
-        
-        # Handle missing state_full names
-        if 'customer_state_full' not in self.df.columns:
-            state_mapping = {
-                'SP': 'São Paulo', 'RJ': 'Rio de Janeiro', 'MG': 'Minas Gerais',
-                'RS': 'Rio Grande do Sul', 'PR': 'Paraná', 'SC': 'Santa Catarina',
-                'BA': 'Bahia', 'DF': 'Distrito Federal', 'ES': 'Espírito Santo',
-                'GO': 'Goiás', 'PE': 'Pernambuco', 'CE': 'Ceará',
-                'PA': 'Pará', 'MA': 'Maranhão', 'MS': 'Mato Grosso do Sul',
-                'MT': 'Mato Grosso', 'PB': 'Paraíba', 'RN': 'Rio Grande do Norte',
-                'AL': 'Alagoas', 'SE': 'Sergipe', 'PI': 'Piauí',
-                'RO': 'Rondônia', 'TO': 'Tocantins', 'AC': 'Acre',
-                'AM': 'Amazonas', 'RR': 'Roraima', 'AP': 'Amapá'
+            # Cek apakah file ada
+            if not os.path.exists(self.data_path):
+                st.error(f"❌ File '{self.data_path}' tidak ditemukan. Pastikan file berada dalam folder yang sama dengan script ini.")
+                st.stop()
+            
+            self.df = pd.read_csv(self.data_path)
+            
+            # Convert timestamp
+            self.df['order_purchase_timestamp'] = pd.to_datetime(
+                self.df['order_purchase_timestamp'], errors='coerce'
+            )
+            
+            # Extract time features
+            self.df['tahun'] = self.df['order_purchase_timestamp'].dt.year
+            self.df['bulan'] = self.df['order_purchase_timestamp'].dt.month
+            
+            # State mapping
+            state_names = {
+                'AC': 'Acre', 'AL': 'Alagoas', 'AP': 'Amapá', 'AM': 'Amazonas',
+                'BA': 'Bahia', 'CE': 'Ceará', 'DF': 'Distrito Federal', 
+                'ES': 'Espírito Santo', 'GO': 'Goiás', 'MA': 'Maranhão',
+                'MT': 'Mato Grosso', 'MS': 'Mato Grosso do Sul', 'MG': 'Minas Gerais',
+                'PA': 'Pará', 'PB': 'Paraíba', 'PR': 'Paraná', 'PE': 'Pernambuco',
+                'PI': 'Piauí', 'RJ': 'Rio de Janeiro', 'RN': 'Rio Grande do Norte',
+                'RS': 'Rio Grande do Sul', 'RO': 'Rondônia', 'RR': 'Roraima',
+                'SC': 'Santa Catarina', 'SP': 'São Paulo', 'SE': 'Sergipe',
+                'TO': 'Tocantins'
             }
-            self.df['customer_state_full'] = self.df['customer_state'].map(state_mapping)
+            
+            self.df['nama_state'] = self.df['customer_state'].map(state_names)
+            
+            st.success(f"✅ Data berhasil dimuat! Total {len(self.df):,} records")
+            
+        except Exception as e:
+            st.error(f"❌ Error loading data: {str(e)}")
+            st.stop()
     
-    def create_filters(self):
-        """Membuat filter section di bawah header"""
+    def create_minimal_filters(self):
+        """Membuat filter minimalis di bawah header"""
         st.markdown("---")
-        st.markdown('<div class="filter-section">', unsafe_allow_html=True)
-        st.subheader("🎛️ FILTER DATA")
         
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            # Filter Tahun
-            tahun_options = ['All Time'] + sorted(self.df['tahun'].dropna().unique())
-            selected_year = st.selectbox(
-                "**Pilih Tahun:**",
-                options=tahun_options,
-                index=0
-            )
-        
-        with col2:
-            # Filter State
-            state_options = ['All States'] + sorted(self.df['customer_state_full'].dropna().unique())
-            selected_state = st.selectbox(
-                "**Pilih State:**",
-                options=state_options,
-                index=0
-            )
-        
-        with col3:
-            # Filter Kategori Produk
-            if 'product_category_name_english' in self.df.columns:
-                category_options = ['All Categories'] + sorted(self.df['product_category_name_english'].dropna().unique())
-                selected_category = st.selectbox(
-                    "**Pilih Kategori Produk:**",
-                    options=category_options,
+        with st.expander("🎛️ **FILTER SETTINGS**", expanded=False):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Filter Tahun dengan opsi All Time
+                tahun_options = ['All Time'] + sorted(self.df['tahun'].unique())
+                selected_year = st.selectbox(
+                    "**Pilih Periode Waktu:**",
+                    options=tahun_options,
                     index=0
                 )
-            else:
-                selected_category = 'All Categories'
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Apply filters
-        filtered_data = self.df.copy()
-        
-        if selected_year != 'All Time':
-            filtered_data = filtered_data[filtered_data['tahun'] == selected_year]
-        
-        if selected_state != 'All States':
-            filtered_data = filtered_data[filtered_data['customer_state_full'] == selected_state]
-        
-        if selected_category != 'All Categories':
-            filtered_data = filtered_data[filtered_data['product_category_name_english'] == selected_category]
-        
-        return filtered_data
-    
-    def create_brazil_map(self, data, metric_type='review'):
-        """Membuat peta Brazil dengan nama state panjang"""
-        if metric_type == 'review':
-            # Aggregate review scores per state
-            state_data = data.groupby('customer_state_full').agg({
-                'review_score': 'mean'
-            }).round(3).reset_index()
-            state_data.columns = ['state', 'value']
-            title = 'Rata-rata Review Score per State'
-            colorscale = 'RdYlGn'
-            colorbar_title = "Review Score"
             
-        else:  # revenue
-            # Aggregate revenue per state
-            state_data = data.groupby('customer_state_full').agg({
-                'price': 'sum'
-            }).round(0).reset_index()
-            state_data.columns = ['state', 'value']
-            title = 'Total Revenue per State (R$)'
-            colorscale = 'Blues'
-            colorbar_title = "Revenue (R$)"
+            with col2:
+                # Filter Periode Waktu
+                if 'time_period' in self.df.columns:
+                    time_period_options = sorted(self.df['time_period'].dropna().unique())
+                    selected_time_period = st.multiselect(
+                        "**Pilih Periode Hari:**",
+                        options=time_period_options,
+                        default=time_period_options
+                    )
+                else:
+                    selected_time_period = None
+            
+            # Apply filters
+            filtered_data = self.df.copy()
+            
+            if selected_year != 'All Time':
+                filtered_data = filtered_data[filtered_data['tahun'] == selected_year]
+            
+            if selected_time_period:
+                filtered_data = filtered_data[filtered_data['time_period'].isin(selected_time_period)]
+            
+            return filtered_data, selected_year
+    
+    def create_mini_metric(self, value, label, icon):
+        """Membuat metric card minimalis"""
+        st.markdown(f"""
+        <div class="mini-metric">
+            <div class="metric-value">{icon} {value}</div>
+            <div class="metric-label">{label}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    def display_minimal_review_metrics(self, data):
+        """Menampilkan metric cards minimalis untuk review"""
+        with st.expander("📊 **REVIEW METRICS**", expanded=False):
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                avg_review = data['review_score'].mean()
+                self.create_mini_metric(f"{avg_review:.2f}/5.0", "Rata-rata Review", "⭐")
+                
+            with col2:
+                positive_reviews = (data['review_score'] >= 4).sum()
+                total_reviews = len(data)
+                positive_pct = (positive_reviews / total_reviews * 100) if total_reviews > 0 else 0
+                self.create_mini_metric(f"{positive_pct:.1f}%", "Review Positif (≥4)", "😊")
+                
+            with col3:
+                negative_reviews = (data['review_score'] <= 2).sum()
+                negative_pct = (negative_reviews / total_reviews * 100) if total_reviews > 0 else 0
+                self.create_mini_metric(f"{negative_pct:.1f}%", "Review Negatif (≤2)", "😞")
+                
+            with col4:
+                total_reviews_count = total_reviews
+                self.create_mini_metric(f"{total_reviews_count:,}", "Total Review", "📝")
+    
+    def display_minimal_revenue_metrics(self, data):
+        """Menampilkan metric cards minimalis untuk revenue"""
+        with st.expander("💰 **REVENUE METRICS**", expanded=False):
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                total_revenue = data['price'].sum()
+                self.create_mini_metric(f"R$ {total_revenue:,.0f}", "Total Revenue", "💰")
+                
+            with col2:
+                total_orders = data['order_id'].nunique()
+                self.create_mini_metric(f"{total_orders:,}", "Total Orders", "📦")
+                
+            with col3:
+                total_customers = data['customer_unique_id'].nunique()
+                self.create_mini_metric(f"{total_customers:,}", "Unique Customers", "👥")
+                
+            with col4:
+                avg_order_value = total_revenue / total_orders if total_orders > 0 else 0
+                self.create_mini_metric(f"R$ {avg_order_value:.2f}", "Avg Order Value", "📊")
+    
+    def display_customer_spending_metrics(self, data):
+        """Menampilkan metric cards untuk customer spending"""
+        with st.expander("👥 **CUSTOMER SPENDING METRICS**", expanded=False):
+            # Hitung spending per customer per state
+            customer_spending = data.groupby('customer_unique_id').agg({
+                'price': 'sum',
+                'nama_state': 'first'
+            }).reset_index()
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                avg_spending = customer_spending['price'].mean()
+                self.create_mini_metric(f"R$ {avg_spending:.2f}", "Rata-rata Spending/Customer", "💰")
+                
+            with col2:
+                median_spending = customer_spending['price'].median()
+                self.create_mini_metric(f"R$ {median_spending:.2f}", "Median Spending/Customer", "📊")
+                
+            with col3:
+                total_customers = customer_spending['customer_unique_id'].nunique()
+                self.create_mini_metric(f"{total_customers:,}", "Total Unique Customers", "👥")
+                
+            with col4:
+                total_revenue = customer_spending['price'].sum()
+                self.create_mini_metric(f"R$ {total_revenue:,.0f}", "Total Customer Spending", "💎")
+    
+    def create_simple_map(self, data, score_type='review'):
+        """Membuat peta Brazil sederhana yang pasti work"""
+        # Aggregate data per state
+        if 'customer_state_full' in data.columns:
+            state_col = 'customer_state_full'
+        else:
+            state_col = 'nama_state'
         
-        # Add coordinates
-        state_data['lat'] = state_data['state'].map(lambda x: self.brazil_states_coords.get(x, {}).get('lat', 0))
-        state_data['lon'] = state_data['state'].map(lambda x: self.brazil_states_coords.get(x, {}).get('lon', 0))
+        state_data = data.groupby(state_col).agg({
+            'review_score': 'mean',
+            'price': 'sum'
+        }).round(3)
         
-        # Remove states without coordinates
+        state_data.columns = ['avg_review', 'total_revenue']
+        state_data = state_data.reset_index()
+        
+        # Tambahkan koordinat
+        state_data['lat'] = state_data[state_col].map(lambda x: self.brazil_states_coords.get(x, {}).get('lat', 0))
+        state_data['lon'] = state_data[state_col].map(lambda x: self.brazil_states_coords.get(x, {}).get('lon', 0))
         state_data = state_data[state_data['lat'] != 0]
         
-        if len(state_data) == 0:
-            st.warning("Tidak ada data state dengan koordinat yang valid.")
-            return None, state_data
-        
-        # Create hover text
-        if metric_type == 'review':
-            hover_text = state_data.apply(
-                lambda row: f"<b>{row['state']}</b><br>Review Score: {row['value']:.2f}", axis=1
-            )
+        if score_type == 'review':
+            z_col = 'avg_review'
+            title = 'Rata-rata Review Score'
+            colorscale = 'RdYlGn'
+            color_min = 3.0
+            color_max = 5.0
+            colorbar_title = "Review Score"
+            
+            # Format hover text dengan aman
+            hover_texts = []
+            for idx, row in state_data.iterrows():
+                text = f"{row[state_col]}<br>Review: {row[z_col]:.2f}"
+                hover_texts.append(text)
+                
         else:
-            hover_text = state_data.apply(
-                lambda row: f"<b>{row['state']}</b><br>Revenue: R$ {row['value']:,.0f}", axis=1
-            )
+            z_col = 'total_revenue'
+            title = 'Total Revenue (R$)'
+            colorscale = 'Blues'
+            color_min = state_data[z_col].min()
+            color_max = state_data[z_col].max()
+            colorbar_title = "Revenue (R$)"
+            
+            # Format hover text dengan aman
+            hover_texts = []
+            for idx, row in state_data.iterrows():
+                text = f"{row[state_col]}<br>Revenue: R$ {row[z_col]:,.0f}"
+                hover_texts.append(text)
         
-        # Create map
+        # Buat peta dengan scattergeo
         fig = go.Figure()
         
         fig.add_trace(go.Scattergeo(
-            lon=state_data['lon'],
-            lat=state_data['lat'],
-            text=hover_text,
-            hoverinfo='text',
-            marker=dict(
-                size=state_data['value'] / state_data['value'].max() * 50 + 20,
-                color=state_data['value'],
-                colorscale=colorscale,
-                colorbar=dict(title=colorbar_title, thickness=15),
-                line=dict(width=1, color='white'),
-            ),
-            name=''
+            lon = state_data['lon'],
+            lat = state_data['lat'],
+            text = hover_texts,
+            hoverinfo = 'text',
+            marker = dict(
+                size = 20,
+                color = state_data[z_col],
+                colorscale = colorscale,
+                cmin = color_min,
+                cmax = color_max,
+                colorbar = dict(
+                    title = colorbar_title,
+                    thickness = 15
+                ),
+                line = dict(width=1, color='white'),
+            )
         ))
         
         fig.update_layout(
-            title=dict(
-                text=f"<b>{title}</b>",
-                x=0.5,
-                xanchor='center',
-                font=dict(size=16)
+            title = dict(
+                text = f"<b>{title}</b>",
+                x = 0.5,
+                xanchor = 'center',
+                font = dict(size=14)
             ),
-            geo=dict(
-                scope='south america',
-                showland=True,
-                landcolor='rgb(243, 243, 243)',
-                countrycolor='rgb(204, 204, 204)',
-                showcountries=True,
-                showsubunits=True,
-                subunitcolor='rgb(255, 255, 255)',
+            geo = dict(
+                scope = 'south america',
+                showland = True,
+                landcolor = 'rgb(243, 243, 243)',
+                countrycolor = 'rgb(204, 204, 204)',
+                showcountries = True,
                 center=dict(lat=-14, lon=-55),
                 projection_scale=3
             ),
-            height=500,
-            margin=dict(l=0, r=0, t=50, b=0)
+            height = 400,
+            margin = dict(l=0, r=0, t=40, b=0)
         )
         
         return fig, state_data
+    
+    def create_customer_spending_map(self, data):
+        """Membuat peta spending per customer dengan ukuran maksimal"""
+        # Aggregate data per state - revenue dan unique customers
+        if 'customer_state_full' in data.columns:
+            state_col = 'customer_state_full'
+        else:
+            state_col = 'nama_state'
+        
+        state_data = data.groupby(state_col).agg({
+            'price': 'sum',
+            'customer_unique_id': 'nunique'
+        }).round(2)
+        
+        state_data.columns = ['total_revenue', 'unique_customers']
+        
+        # Hitung spending per customer
+        state_data['spending_per_customer'] = (state_data['total_revenue'] / state_data['unique_customers']).round(2)
+        state_data = state_data.reset_index()
+        
+        # Tambahkan koordinat
+        state_data['lat'] = state_data[state_col].map(lambda x: self.brazil_states_coords.get(x, {}).get('lat', 0))
+        state_data['lon'] = state_data[state_col].map(lambda x: self.brazil_states_coords.get(x, {}).get('lon', 0))
+        state_data = state_data[state_data['lat'] != 0]
+        
+        # Format hover text
+        hover_texts = []
+        for idx, row in state_data.iterrows():
+            text = f"{row[state_col]}<br>Spending/Customer: R$ {row['spending_per_customer']:.2f}<br>Total Customers: {row['unique_customers']:,}<br>Total Revenue: R$ {row['total_revenue']:,.0f}"
+            hover_texts.append(text)
+        
+        # Buat peta dengan ukuran lebih besar
+        fig = go.Figure()
+        
+        fig.add_trace(go.Scattergeo(
+            lon = state_data['lon'],
+            lat = state_data['lat'],
+            text = hover_texts,
+            hoverinfo = 'text',
+            marker = dict(
+                size = 25,  # Ukuran marker lebih besar
+                color = state_data['spending_per_customer'],
+                colorscale = 'Viridis',
+                cmin = state_data['spending_per_customer'].min(),
+                cmax = state_data['spending_per_customer'].max(),
+                colorbar = dict(
+                    title = "Spending/Customer (R$)",
+                    thickness = 20,
+                    len = 0.8
+                ),
+                line = dict(width=2, color='white'),
+            )
+        ))
+        
+        fig.update_layout(
+            title = dict(
+                text = "<b>Average Spending per Customer by State</b>",
+                x = 0.5,
+                xanchor = 'center',
+                font = dict(size=16)
+            ),
+            geo = dict(
+                scope = 'south america',
+                showland = True,
+                landcolor = 'rgb(243, 243, 243)',
+                countrycolor = 'rgb(204, 204, 204)',
+                showcountries = True,
+                showocean = True,
+                oceancolor = 'rgb(204, 229, 255)',
+                center=dict(lat=-14, lon=-55),
+                projection_scale=3.2,  # Zoom level lebih besar
+                lonaxis_range=[-75, -30],  # Batas longitude
+                lataxis_range=[-35, 5],    # Batas latitude
+            ),
+            height = 600,  # Tinggi peta lebih besar
+            margin = dict(l=0, r=0, t=50, b=0)
+        )
+        
+        return fig, state_data
+    
+    def display_spending_segments(self, data):
+        """Menampilkan segmentasi spending customer dengan % distribusi"""
+        # Hitung spending per customer
+        customer_spending = data.groupby('customer_unique_id').agg({
+            'price': 'sum'
+        }).reset_index()
+        
+        total_customers = len(customer_spending)
+        
+        # Definisikan segmentasi
+        def get_spending_segment(spending):
+            if spending < 100:
+                return 'Low (< R$ 100)'
+            elif spending < 500:
+                return 'Medium (R$ 100-500)'
+            elif spending < 2000:
+                return 'High (R$ 500-2000)'
+            else:
+                return 'VIP (> R$ 2000)'
+        
+        # Terapkan segmentasi
+        customer_spending['segment'] = customer_spending['price'].apply(get_spending_segment)
+        
+        # Hitung statistik per segment
+        segment_stats = customer_spending.groupby('segment').agg({
+            'customer_unique_id': 'count',
+            'price': ['sum', 'mean', 'median']
+        }).round(2)
+        
+        segment_stats.columns = ['customer_count', 'total_spending', 'avg_spending', 'median_spending']
+        segment_stats = segment_stats.reset_index()
+        
+        # Hitung persentase
+        segment_stats['percentage'] = (segment_stats['customer_count'] / total_customers * 100).round(1)
+        
+        # Urutkan berdasarkan segment
+        segment_order = ['Low (< R$ 100)', 'Medium (R$ 100-500)', 'High (R$ 500-2000)', 'VIP (> R$ 2000)']
+        segment_stats['segment'] = pd.Categorical(segment_stats['segment'], categories=segment_order, ordered=True)
+        segment_stats = segment_stats.sort_values('segment')
+        
+        # Tampilkan segment cards dengan persentase
+        st.markdown("### 🎯 CUSTOMER SPENDING SEGMENTS")
+        
+        for idx, row in segment_stats.iterrows():
+            segment_class = {
+                'Low (< R$ 100)': 'segment-low',
+                'Medium (R$ 100-500)': 'segment-medium', 
+                'High (R$ 500-2000)': 'segment-high',
+                'VIP (> R$ 2000)': 'segment-vip'
+            }[row['segment']]
+            
+            st.markdown(f"""
+            <div class="segment-card {segment_class}">
+                <div style="font-weight: bold; font-size: 1.1rem; margin-bottom: 0.5rem;">
+                    {row['segment']} <span style="font-size: 0.9rem; color: #6c757d;">({row['percentage']}%)</span>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+                    <div>
+                        <div style="font-size: 0.9rem; color: #6c757d;">Customers</div>
+                        <div style="font-weight: bold; font-size: 1.2rem;">{row['customer_count']:,}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.9rem; color: #6c757d;">Total Spending</div>
+                        <div style="font-weight: bold; font-size: 1.2rem;">R$ {row['total_spending']:,.0f}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.9rem; color: #6c757d;">Avg/Person</div>
+                        <div style="font-weight: bold; font-size: 1.2rem;">R$ {row['avg_spending']:.2f}</div>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    def display_repeat_purchase_analysis(self, data):
+        """Menampilkan analisis repeat purchase berdasarkan segment"""
+        # Hitung jumlah order per customer
+        customer_orders = data.groupby('customer_unique_id').agg({
+            'order_id': 'nunique',
+            'price': 'sum'
+        }).reset_index()
+        
+        customer_orders.columns = ['customer_id', 'order_count', 'total_spending']
+        
+        total_customers = len(customer_orders)
+        
+        # Definisikan segment repeat purchase
+        def get_repeat_segment(order_count):
+            if order_count == 1:
+                return 'One-time'
+            elif order_count <= 3:
+                return 'Occasional (2-3)'
+            elif order_count <= 10:
+                return 'Regular (4-10)'
+            else:
+                return 'Frequent (>10)'
+        
+        # Terapkan segmentasi repeat purchase
+        customer_orders['repeat_segment'] = customer_orders['order_count'].apply(get_repeat_segment)
+        
+        # Hitung statistik per segment repeat
+        repeat_stats = customer_orders.groupby('repeat_segment').agg({
+            'customer_id': 'count',
+            'order_count': 'mean',
+            'total_spending': ['sum', 'mean']
+        }).round(2)
+        
+        repeat_stats.columns = ['customer_count', 'avg_orders', 'total_spending', 'avg_spending']
+        repeat_stats = repeat_stats.reset_index()
+        
+        # Hitung persentase
+        repeat_stats['percentage'] = (repeat_stats['customer_count'] / total_customers * 100).round(1)
+        
+        # Urutkan berdasarkan order count (bukan alphabet)
+        repeat_order = ['One-time', 'Occasional (2-3)', 'Regular (4-10)', 'Frequent (>10)']
+        repeat_stats['repeat_segment'] = pd.Categorical(repeat_stats['repeat_segment'], categories=repeat_order, ordered=True)
+        repeat_stats = repeat_stats.sort_values('repeat_segment')
+        
+        # Tampilkan repeat purchase segments
+        st.markdown("### 🔄 REPEAT PURCHASE SEGMENTS")
+        
+        for idx, row in repeat_stats.iterrows():
+            st.markdown(f"""
+            <div class="repeat-card">
+                <div style="font-weight: bold; font-size: 1.1rem; margin-bottom: 0.5rem;">
+                    {row['repeat_segment']} <span style="font-size: 0.9rem; color: #6c757d;">({row['percentage']}%)</span>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 1rem;">
+                    <div>
+                        <div style="font-size: 0.9rem; color: #6c757d;">Customers</div>
+                        <div style="font-weight: bold; font-size: 1.2rem;">{row['customer_count']:,}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.9rem; color: #6c757d;">Avg Orders</div>
+                        <div style="font-weight: bold; font-size: 1.2rem;">{row['avg_orders']:.1f}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.9rem; color: #6c757d;">Total Spending</div>
+                        <div style="font-weight: bold; font-size: 1.2rem;">R$ {row['total_spending']:,.0f}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.9rem; color: #6c757d;">Avg/Person</div>
+                        <div style="font-weight: bold; font-size: 1.2rem;">R$ {row['avg_spending']:.2f}</div>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    def display_state_ranking_vertical(self, data, score_type='review'):
+        """Menampilkan ranking state secara vertikal"""
+        # Aggregate data per state
+        if 'customer_state_full' in data.columns:
+            state_col = 'customer_state_full'
+        else:
+            state_col = 'nama_state'
+        
+        if score_type == 'review':
+            state_scores = data.groupby(state_col)['review_score'].mean().round(3).reset_index()
+            state_scores.columns = ['state', 'score']
+        else:  # revenue
+            state_scores = data.groupby(state_col).agg({'price': 'sum'}).round(0).reset_index()
+            state_scores.columns = ['state', 'score']
+        
+        # Top 5 dan Bottom 5
+        top_5 = state_scores.nlargest(5, 'score')
+        bottom_5 = state_scores.nsmallest(5, 'score')
+        
+        # Display TOP 1 dengan besar
+        if len(top_5) > 0:
+            st.markdown(f"**🥇 {top_5.iloc[0]['state']}**")
+            if score_type == 'review':
+                st.markdown(f"<div style='font-size: 1.5rem; font-weight: bold; color: #28a745; text-align: center;'>{top_5.iloc[0]['score']:.2f}</div>", unsafe_allow_html=True)
+            else:
+                st.markdown(f"<div style='font-size: 1.5rem; font-weight: bold; color: #28a745; text-align: center;'>R$ {top_5.iloc[0]['score']:,.0f}</div>", unsafe_allow_html=True)
+            st.markdown("---")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**TOP 2-5**")
+            for i in range(1, min(5, len(top_5))):
+                state = top_5.iloc[i]
+                score_display = f"{state['score']:.2f}" if score_type == 'review' else f"R$ {state['score']:,.0f}"
+                st.markdown(f"<div class='ranking-item-top'>"
+                           f"<span class='ranking-number'>#{i+1}</span>"
+                           f"<span class='ranking-name'>{state['state']}</span>"
+                           f"<span class='ranking-score'>{score_display}</span>"
+                           f"</div>", unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown("**BOTTOM 5**")
+            for i in range(min(5, len(bottom_5))):
+                state = bottom_5.iloc[i]
+                score_display = f"{state['score']:.2f}" if score_type == 'review' else f"R$ {state['score']:,.0f}"
+                st.markdown(f"<div class='ranking-item-bottom'>"
+                           f"<span class='ranking-number'>#{len(state_scores)-4+i}</span>"
+                           f"<span class='ranking-name'>{state['state']}</span>"
+                           f"<span class='ranking-score-bad'>{score_display}</span>"
+                           f"</div>", unsafe_allow_html=True)
     
     def display_product_rankings(self, data):
         """Menampilkan ranking produk berdasarkan review dan revenue"""
@@ -322,300 +678,135 @@ class BrazilEcommerceDashboard:
             st.warning("Data kategori produk tidak tersedia")
             return
         
-        # Filter kategori dengan cukup data
-        category_counts = data.groupby('product_category_name_english').size()
-        valid_categories = category_counts[category_counts >= 5].index
-        filtered_data = data[data['product_category_name_english'].isin(valid_categories)]
-        
-        if len(valid_categories) == 0:
-            st.warning("Tidak ada kategori dengan cukup data untuk analisis")
-            return
-        
         col1, col2 = st.columns(2)
         
         with col1:
-            st.markdown("### 📊 RANKING BERDASARKAN REVIEW")
-            
+            st.markdown("**📦 TOP 5 KATEGORI - REVIEW**")
             # Review ranking
-            review_ranking = filtered_data.groupby('product_category_name_english').agg({
-                'review_score': ['mean', 'count']
-            }).round(3)
-            review_ranking.columns = ['avg_review', 'count']
-            review_ranking = review_ranking.reset_index()
-            review_ranking = review_ranking[review_ranking['count'] >= 5]  # Minimum 5 reviews
+            category_review = data.groupby('product_category_name_english')['review_score'].mean().round(3).reset_index()
+            category_review = category_review[category_review['review_score'].notna()]
+            category_review = category_review[category_review['product_category_name_english'].notna()]
             
-            if len(review_ranking) > 0:
-                # Top 5 by review
-                top_review = review_ranking.nlargest(5, 'avg_review')
-                st.markdown("**🥇 TOP 5 KATEGORI - REVIEW TERTINGGI**")
-                for i, (idx, row) in enumerate(top_review.iterrows(), 1):
-                    st.markdown(f"""
-                    <div class="ranking-card top-ranking">
-                        <div style="display: flex; justify-content: between; align-items: center;">
-                            <span style="font-weight: bold; color: #28a745;">#{i}</span>
-                            <span style="flex: 1; margin: 0 1rem; font-weight: bold;">{row['product_category_name_english']}</span>
-                            <span style="font-weight: bold; color: #28a745;">{row['avg_review']:.2f}/5.0</span>
-                        </div>
-                        <div style="font-size: 0.8rem; color: #6c757d; margin-top: 0.5rem;">
-                            {row['count']} reviews
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                # Bottom 5 by review
-                bottom_review = review_ranking.nsmallest(5, 'avg_review')
-                st.markdown("**📉 BOTTOM 5 KATEGORI - REVIEW TERENDAH**")
-                for i, (idx, row) in enumerate(bottom_review.iterrows(), 1):
-                    st.markdown(f"""
-                    <div class="ranking-card bottom-ranking">
-                        <div style="display: flex; justify-content: between; align-items: center;">
-                            <span style="font-weight: bold; color: #dc3545;">#{i}</span>
-                            <span style="flex: 1; margin: 0 1rem; font-weight: bold;">{row['product_category_name_english']}</span>
-                            <span style="font-weight: bold; color: #dc3545;">{row['avg_review']:.2f}/5.0</span>
-                        </div>
-                        <div style="font-size: 0.8rem; color: #6c757d; margin-top: 0.5rem;">
-                            {row['count']} reviews
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
+            # Filter hanya kategori dengan cukup data
+            category_counts = data.groupby('product_category_name_english').size()
+            valid_categories = category_counts[category_counts > 10].index
+            category_review = category_review[category_review['product_category_name_english'].isin(valid_categories)]
+            
+            top_5_review = category_review.nlargest(5, 'review_score')
+            bottom_5_review = category_review.nsmallest(5, 'review_score')
+            
+            for i, (idx, row) in enumerate(top_5_review.iterrows(), 1):
+                st.markdown(f"<div class='ranking-item-top'>"
+                           f"<span class='ranking-number'>#{i}</span>"
+                           f"<span class='ranking-name'>{row['product_category_name_english']}</span>"
+                           f"<span class='ranking-score'>{row['review_score']:.2f}</span>"
+                           f"</div>", unsafe_allow_html=True)
+            
+            st.markdown("---")
+            st.markdown("**📉 BOTTOM 5 KATEGORI - REVIEW**")
+            for i, (idx, row) in enumerate(bottom_5_review.iterrows(), 1):
+                st.markdown(f"<div class='ranking-item-bottom'>"
+                           f"<span class='ranking-number'>#{i}</span>"
+                           f"<span class='ranking-name'>{row['product_category_name_english']}</span>"
+                           f"<span class='ranking-score-bad'>{row['review_score']:.2f}</span>"
+                           f"</div>", unsafe_allow_html=True)
         
         with col2:
-            st.markdown("### 💰 RANKING BERDASARKAN REVENUE")
-            
+            st.markdown("**💰 TOP 5 KATEGORI - REVENUE**")
             # Revenue ranking
-            revenue_ranking = filtered_data.groupby('product_category_name_english').agg({
-                'price': ['sum', 'count']
-            }).round(0)
-            revenue_ranking.columns = ['total_revenue', 'order_count']
-            revenue_ranking = revenue_ranking.reset_index()
+            category_revenue = data.groupby('product_category_name_english')['price'].sum().round(0).reset_index()
+            category_revenue = category_revenue[category_revenue['price'].notna()]
+            category_revenue = category_revenue[category_revenue['product_category_name_english'].notna()]
             
-            if len(revenue_ranking) > 0:
-                # Top 5 by revenue
-                top_revenue = revenue_ranking.nlargest(5, 'total_revenue')
-                st.markdown("**🥇 TOP 5 KATEGORI - REVENUE TERTINGGI**")
-                for i, (idx, row) in enumerate(top_revenue.iterrows(), 1):
-                    st.markdown(f"""
-                    <div class="ranking-card top-ranking">
-                        <div style="display: flex; justify-content: between; align-items: center;">
-                            <span style="font-weight: bold; color: #28a745;">#{i}</span>
-                            <span style="flex: 1; margin: 0 1rem; font-weight: bold;">{row['product_category_name_english']}</span>
-                            <span style="font-weight: bold; color: #28a745;">R$ {row['total_revenue']:,.0f}</span>
-                        </div>
-                        <div style="font-size: 0.8rem; color: #6c757d; margin-top: 0.5rem;">
-                            {row['order_count']} orders
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                # Bottom 5 by revenue
-                bottom_revenue = revenue_ranking.nsmallest(5, 'total_revenue')
-                st.markdown("**📉 BOTTOM 5 KATEGORI - REVENUE TERENDAH**")
-                for i, (idx, row) in enumerate(bottom_revenue.iterrows(), 1):
-                    st.markdown(f"""
-                    <div class="ranking-card bottom-ranking">
-                        <div style="display: flex; justify-content: between; align-items: center;">
-                            <span style="font-weight: bold; color: #dc3545;">#{i}</span>
-                            <span style="flex: 1; margin: 0 1rem; font-weight: bold;">{row['product_category_name_english']}</span>
-                            <span style="font-weight: bold; color: #dc3545;">R$ {row['total_revenue']:,.0f}</span>
-                        </div>
-                        <div style="font-size: 0.8rem; color: #6c757d; margin-top: 0.5rem;">
-                            {row['order_count']} orders
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-    
-    def display_customer_analysis(self, data):
-        """Menampilkan analisis customer spending"""
-        st.markdown("### 👥 ANALISIS SPENDING CUSTOMER")
-        
-        # Hitung spending per customer
-        customer_spending = data.groupby('customer_unique_id').agg({
-            'price': 'sum',
-            'order_id': 'nunique',
-            'customer_state_full': 'first'
-        }).reset_index()
-        
-        customer_spending.columns = ['customer_id', 'total_spending', 'order_count', 'state']
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("#### 📈 DISTRIBUSI SPENDING CUSTOMER")
+            top_5_revenue = category_revenue.nlargest(5, 'price')
+            bottom_5_revenue = category_revenue.nsmallest(5, 'price')
             
-            # Metrics
-            avg_spending = customer_spending['total_spending'].mean()
-            median_spending = customer_spending['total_spending'].median()
-            max_spending = customer_spending['total_spending'].max()
+            for i, (idx, row) in enumerate(top_5_revenue.iterrows(), 1):
+                st.markdown(f"<div class='ranking-item-top'>"
+                           f"<span class='ranking-number'>#{i}</span>"
+                           f"<span class='ranking-name'>{row['product_category_name_english']}</span>"
+                           f"<span class='ranking-score'>R$ {row['price']:,.0f}</span>"
+                           f"</div>", unsafe_allow_html=True)
             
-            st.metric("Rata-rata Spending per Customer", f"R$ {avg_spending:,.2f}")
-            st.metric("Median Spending per Customer", f"R$ {median_spending:,.2f}")
-            st.metric("Spending Tertinggi", f"R$ {max_spending:,.2f}")
-            
-            # Histogram spending
-            fig = px.histogram(
-                customer_spending, 
-                x='total_spending',
-                title='Distribusi Total Spending per Customer',
-                labels={'total_spending': 'Total Spending (R$)'},
-                nbins=50
-            )
-            fig.update_layout(showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            st.markdown("#### 🗺️ SPENDING PER CUSTOMER PER STATE")
-            
-            # Spending per customer per state
-            state_spending = customer_spending.groupby('state').agg({
-                'total_spending': 'mean',
-                'customer_id': 'count'
-            }).round(2).reset_index()
-            
-            state_spending.columns = ['state', 'avg_spending_per_customer', 'customer_count']
-            state_spending = state_spending.nlargest(10, 'avg_spending_per_customer')
-            
-            fig = px.bar(
-                state_spending,
-                x='state',
-                y='avg_spending_per_customer',
-                title='Rata-rata Spending per Customer (Top 10 State)',
-                labels={'avg_spending_per_customer': 'Rata-rata Spending (R$)', 'state': 'State'},
-                color='avg_spending_per_customer',
-                color_continuous_scale='Viridis'
-            )
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Customer segments berdasarkan spending
-            st.markdown("#### 🎯 SEGMENTASI CUSTOMER")
-            
-            def get_segment(spending):
-                if spending < 100: return 'Low (< R$ 100)'
-                elif spending < 500: return 'Medium (R$ 100-500)'
-                elif spending < 2000: return 'High (R$ 500-2000)'
-                else: return 'VIP (> R$ 2000)'
-            
-            customer_spending['segment'] = customer_spending['total_spending'].apply(get_segment)
-            segment_stats = customer_spending['segment'].value_counts()
-            
-            fig_pie = px.pie(
-                values=segment_stats.values,
-                names=segment_stats.index,
-                title='Distribusi Segment Customer Berdasarkan Spending'
-            )
-            st.plotly_chart(fig_pie, use_container_width=True)
+            st.markdown("---")
+            st.markdown("**📊 BOTTOM 5 KATEGORI - REVENUE**")
+            for i, (idx, row) in enumerate(bottom_5_revenue.iterrows(), 1):
+                st.markdown(f"<div class='ranking-item-bottom'>"
+                           f"<span class='ranking-number'>#{i}</span>"
+                           f"<span class='ranking-name'>{row['product_category_name_english']}</span>"
+                           f"<span class='ranking-score-bad'>R$ {row['price']:,.0f}</span>"
+                           f"</div>", unsafe_allow_html=True)
     
     def create_dashboard(self):
-        """Membuat dashboard utama"""
+        """Membuat dashboard utama dengan tabs"""
         # Header
         st.markdown('<h1 class="main-header">📊 BRAZIL E-COMMERCE DASHBOARD</h1>', unsafe_allow_html=True)
         
-        # Filters
-        filtered_data = self.create_filters()
-        
-        # Key metrics
-        st.markdown("---")
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            total_revenue = filtered_data['price'].sum()
-            st.metric("Total Revenue", f"R$ {total_revenue:,.0f}")
-        
-        with col2:
-            avg_review = filtered_data['review_score'].mean()
-            st.metric("Rata-rata Review", f"{avg_review:.2f}/5.0")
-        
-        with col3:
-            total_orders = filtered_data['order_id'].nunique()
-            st.metric("Total Orders", f"{total_orders:,}")
-        
-        with col4:
-            total_customers = filtered_data['customer_unique_id'].nunique()
-            st.metric("Unique Customers", f"{total_customers:,}")
+        # Filter minimalis
+        filtered_data, selected_period = self.create_minimal_filters()
         
         # Tabs utama
-        st.markdown("---")
-        tab1, tab2, tab3, tab4 = st.tabs([
-            "⭐ REVIEW ANALYSIS", 
-            "💰 REVENUE ANALYSIS", 
-            "📦 PRODUCT ANALYSIS", 
-            "👥 CUSTOMER ANALYSIS"
-        ])
+        tab1, tab2, tab3, tab4 = st.tabs(["⭐ REVIEW ANALYSIS", "💰 REVENUE ANALYSIS", "📦 PRODUCT ANALYSIS", "👥 CUSTOMER ANALYSIS"])
         
         with tab1:
-            st.markdown("## ⭐ REVIEW ANALYSIS")
-            fig_review, review_data = self.create_brazil_map(filtered_data, 'review')
-            if fig_review:
-                st.plotly_chart(fig_review, use_container_width=True)
+            # Metrics expandable
+            self.display_minimal_review_metrics(filtered_data)
             
-            # Review statistics
-            col1, col2 = st.columns(2)
+            # Layout utama
+            col1, col2 = st.columns([3, 2])
+            
             with col1:
-                review_dist = px.histogram(
-                    filtered_data, 
-                    x='review_score', 
-                    title='Distribusi Review Score',
-                    nbins=5
-                )
-                st.plotly_chart(review_dist, use_container_width=True)
+                st.markdown("**🗺️ PETA REVIEW BRAZIL**")
+                fig, state_data = self.create_simple_map(filtered_data, 'review')
+                st.plotly_chart(fig, use_container_width=True)
             
             with col2:
-                state_review = filtered_data.groupby('customer_state_full')['review_score'].mean().round(2).reset_index()
-                state_review = state_review.nlargest(10, 'review_score')
-                fig_bar = px.bar(
-                    state_review,
-                    x='customer_state_full',
-                    y='review_score',
-                    title='Top 10 State dengan Review Tertinggi',
-                    labels={'review_score': 'Rata-rata Review', 'customer_state_full': 'State'}
-                )
-                st.plotly_chart(fig_bar, use_container_width=True)
+                st.markdown("**🏆 RANKING STATE**")
+                self.display_state_ranking_vertical(filtered_data, 'review')
         
         with tab2:
-            st.markdown("## 💰 REVENUE ANALYSIS")
-            fig_revenue, revenue_data = self.create_brazil_map(filtered_data, 'revenue')
-            if fig_revenue:
-                st.plotly_chart(fig_revenue, use_container_width=True)
+            # Metrics expandable
+            self.display_minimal_revenue_metrics(filtered_data)
             
-            # Revenue statistics
-            col1, col2 = st.columns(2)
+            # Layout utama
+            col1, col2 = st.columns([3, 2])
+            
             with col1:
-                state_revenue = filtered_data.groupby('customer_state_full')['price'].sum().reset_index()
-                state_revenue = state_revenue.nlargest(10, 'price')
-                fig_bar = px.bar(
-                    state_revenue,
-                    x='customer_state_full',
-                    y='price',
-                    title='Top 10 State dengan Revenue Tertinggi',
-                    labels={'price': 'Total Revenue (R$)', 'customer_state_full': 'State'}
-                )
-                st.plotly_chart(fig_bar, use_container_width=True)
+                st.markdown("**🗺️ PETA REVENUE BRAZIL**")
+                fig, state_data = self.create_simple_map(filtered_data, 'revenue')
+                st.plotly_chart(fig, use_container_width=True)
             
             with col2:
-                monthly_revenue = filtered_data.groupby(
-                    filtered_data['order_purchase_timestamp'].dt.to_period('M')
-                )['price'].sum().reset_index()
-                monthly_revenue['order_purchase_timestamp'] = monthly_revenue['order_purchase_timestamp'].dt.to_timestamp()
-                
-                fig_line = px.line(
-                    monthly_revenue,
-                    x='order_purchase_timestamp',
-                    y='price',
-                    title='Trend Revenue Bulanan',
-                    labels={'price': 'Revenue (R$)', 'order_purchase_timestamp': 'Bulan'}
-                )
-                st.plotly_chart(fig_line, use_container_width=True)
+                st.markdown("**🏆 RANKING STATE**")
+                self.display_state_ranking_vertical(filtered_data, 'revenue')
         
         with tab3:
-            st.markdown("## 📦 PRODUCT ANALYSIS")
+            st.markdown("### 📦 PRODUCT PERFORMANCE ANALYSIS")
             self.display_product_rankings(filtered_data)
         
         with tab4:
-            st.markdown("## 👥 CUSTOMER ANALYSIS")
-            self.display_customer_analysis(filtered_data)
+            # Metrics untuk customer spending
+            self.display_customer_spending_metrics(filtered_data)
+            
+            st.markdown("---")
+            
+            # Layout untuk customer analysis - FULL WIDTH untuk peta
+            st.markdown("**🗺️ PETA SPENDING PER CUSTOMER - BRAZIL**")
+            fig, state_data = self.create_customer_spending_map(filtered_data)
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Spending segments dan repeat purchase analysis di bawah peta
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                self.display_spending_segments(filtered_data)
+            
+            with col2:
+                self.display_repeat_purchase_analysis(filtered_data)
 
 def main():
     # Initialize dan jalankan dashboard
-    dashboard = BrazilEcommerceDashboard()
+    dashboard = FinalCleanBrazilEcommerceDashboard("main_data.csv")
     dashboard.create_dashboard()
 
 if __name__ == "__main__":
