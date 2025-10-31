@@ -10,7 +10,7 @@ import os
 st.set_page_config(
     page_title="Brazil E-Commerce Dashboard",
     page_icon="📊",
-    layout="wide",
+    layout="wide", 
     initial_sidebar_state="collapsed"
 )
 
@@ -112,6 +112,18 @@ st.markdown("""
         color: #dc3545;
         font-weight: bold;
     }
+    .time-period-card {
+        background: white;
+        padding: 1rem;
+        border-radius: 8px;
+        margin-bottom: 0.5rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        border-left: 4px solid;
+    }
+    .period-dawn { border-left-color: #4e54c8; background: linear-gradient(90deg, #8f94fb, white); }
+    .period-morning { border-left-color: #ff9a00; background: linear-gradient(90deg, #ffeca0, white); }
+    .period-afternoon { border-left-color: #38ef7d; background: linear-gradient(90deg, #a8ff78, white); }
+    .period-evening { border-left-color: #ff416c; background: linear-gradient(90deg, #ff9a9e, white); }
 </style>
 """, unsafe_allow_html=True)
 
@@ -171,6 +183,20 @@ class FinalCleanBrazilEcommerceDashboard:
             # Extract time features
             self.df['tahun'] = self.df['order_purchase_timestamp'].dt.year
             self.df['bulan'] = self.df['order_purchase_timestamp'].dt.month
+            self.df['jam'] = self.df['order_purchase_timestamp'].dt.hour
+            
+            # Kategorikan waktu berdasarkan jam
+            def categorize_time_period(hour):
+                if 0 <= hour < 6:
+                    return 'Dini Hari (00:00-06:00)'
+                elif 6 <= hour < 12:
+                    return 'Pagi (06:00-12:00)'
+                elif 12 <= hour < 18:
+                    return 'Siang (12:00-18:00)'
+                else:
+                    return 'Malam (18:00-24:00)'
+            
+            self.df['time_period'] = self.df['jam'].apply(categorize_time_period)
             
             # State mapping
             state_names = {
@@ -211,15 +237,12 @@ class FinalCleanBrazilEcommerceDashboard:
             
             with col2:
                 # Filter Periode Waktu
-                if 'time_period' in self.df.columns:
-                    time_period_options = sorted(self.df['time_period'].dropna().unique())
-                    selected_time_period = st.multiselect(
-                        "**Pilih Periode Hari:**",
-                        options=time_period_options,
-                        default=time_period_options
-                    )
-                else:
-                    selected_time_period = None
+                time_period_options = sorted(self.df['time_period'].dropna().unique())
+                selected_time_period = st.multiselect(
+                    "**Pilih Periode Hari:**",
+                    options=time_period_options,
+                    default=time_period_options
+                )
             
             # Apply filters
             filtered_data = self.df.copy()
@@ -247,7 +270,9 @@ class FinalCleanBrazilEcommerceDashboard:
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
-                avg_review = data['review_score'].mean()
+                # PERBAIKAN: Filter out review_score = 0 sebelum menghitung rata-rata
+                valid_reviews = data[data['review_score'] > 0]
+                avg_review = valid_reviews['review_score'].mean()
                 self.create_mini_metric(f"{avg_review:.2f}/5.0", "Rata-rata Review", "⭐")
                 
             with col2:
@@ -262,8 +287,10 @@ class FinalCleanBrazilEcommerceDashboard:
                 self.create_mini_metric(f"{negative_pct:.1f}%", "Review Negatif (≤2)", "😞")
                 
             with col4:
+                # PERBAIKAN: Hitung jumlah review dengan score 0
+                count_zero_review = (data['review_score'] == 0).sum()
                 total_reviews_count = total_reviews
-                self.create_mini_metric(f"{total_reviews_count:,}", "Total Review", "📝")
+                self.create_mini_metric(f"{total_reviews_count:,}", f"Total Review ({count_zero_review} score 0)", "📝")
     
     def display_minimal_revenue_metrics(self, data):
         """Menampilkan metric cards minimalis untuk revenue"""
@@ -289,7 +316,7 @@ class FinalCleanBrazilEcommerceDashboard:
     def display_customer_spending_metrics(self, data):
         """Menampilkan metric cards untuk customer spending"""
         with st.expander("👥 **CUSTOMER SPENDING METRICS**", expanded=False):
-            # Hitung spending per customer per state
+            # Hitung spending per customer_unique_id per state
             customer_spending = data.groupby('customer_unique_id').agg({
                 'price': 'sum',
                 'nama_state': 'first'
@@ -321,10 +348,18 @@ class FinalCleanBrazilEcommerceDashboard:
         else:
             state_col = 'nama_state'
         
-        state_data = data.groupby(state_col).agg({
-            'review_score': 'mean',
-            'price': 'sum'
-        }).round(3)
+        if score_type == 'review':
+            # PERBAIKAN: Filter out review_score = 0 sebelum menghitung rata-rata
+            valid_reviews = data[data['review_score'] > 0]
+            state_data = valid_reviews.groupby(state_col).agg({
+                'review_score': 'mean',
+                'price': 'sum'
+            }).round(3)
+        else:
+            state_data = data.groupby(state_col).agg({
+                'review_score': 'mean',
+                'price': 'sum'
+            }).round(3)
         
         state_data.columns = ['avg_review', 'total_revenue']
         state_data = state_data.reset_index()
@@ -407,8 +442,8 @@ class FinalCleanBrazilEcommerceDashboard:
         return fig, state_data
     
     def create_customer_spending_map(self, data):
-        """Membuat peta spending per customer dengan ukuran maksimal"""
-        # Aggregate data per state - revenue dan unique customers
+        """Membuat peta spending per customer_unique_id dengan ukuran lebih kecil"""
+        # Aggregate data per state - revenue dan unique customer_unique_ids
         if 'customer_state_full' in data.columns:
             state_col = 'customer_state_full'
         else:
@@ -419,10 +454,10 @@ class FinalCleanBrazilEcommerceDashboard:
             'customer_unique_id': 'nunique'
         }).round(2)
         
-        state_data.columns = ['total_revenue', 'unique_customers']
+        state_data.columns = ['total_revenue', 'unique_customer_unique_ids']
         
-        # Hitung spending per customer
-        state_data['spending_per_customer'] = (state_data['total_revenue'] / state_data['unique_customers']).round(2)
+        # Hitung spending per customer_unique_id
+        state_data['spending_per_customer_unique_id'] = (state_data['total_revenue'] / state_data['unique_customer_unique_ids']).round(2)
         state_data = state_data.reset_index()
         
         # Tambahkan koordinat
@@ -433,10 +468,10 @@ class FinalCleanBrazilEcommerceDashboard:
         # Format hover text
         hover_texts = []
         for idx, row in state_data.iterrows():
-            text = f"{row[state_col]}<br>Spending/Customer: R$ {row['spending_per_customer']:.2f}<br>Total Customers: {row['unique_customers']:,}<br>Total Revenue: R$ {row['total_revenue']:,.0f}"
+            text = f"{row[state_col]}<br>Spending/Customer: R$ {row['spending_per_customer_unique_id']:.2f}<br>Total Customers: {row['unique_customer_unique_ids']:,}<br>Total Revenue: R$ {row['total_revenue']:,.0f}"
             hover_texts.append(text)
         
-        # Buat peta dengan ukuran lebih besar
+        # Buat peta dengan ukuran lebih kecil (10cm x 10cm)
         fig = go.Figure()
         
         fig.add_trace(go.Scattergeo(
@@ -445,17 +480,17 @@ class FinalCleanBrazilEcommerceDashboard:
             text = hover_texts,
             hoverinfo = 'text',
             marker = dict(
-                size = 25,  # Ukuran marker lebih besar
-                color = state_data['spending_per_customer'],
+                size = 15,  # Ukuran marker lebih kecil
+                color = state_data['spending_per_customer_unique_id'],
                 colorscale = 'Viridis',
-                cmin = state_data['spending_per_customer'].min(),
-                cmax = state_data['spending_per_customer'].max(),
+                cmin = state_data['spending_per_customer_unique_id'].min(),
+                cmax = state_data['spending_per_customer_unique_id'].max(),
                 colorbar = dict(
                     title = "Spending/Customer (R$)",
-                    thickness = 20,
-                    len = 0.8
+                    thickness = 15,
+                    len = 0.6
                 ),
-                line = dict(width=2, color='white'),
+                line = dict(width=1, color='white'),
             )
         ))
         
@@ -464,7 +499,7 @@ class FinalCleanBrazilEcommerceDashboard:
                 text = "<b>Average Spending per Customer by State</b>",
                 x = 0.5,
                 xanchor = 'center',
-                font = dict(size=16)
+                font = dict(size=14)
             ),
             geo = dict(
                 scope = 'south america',
@@ -475,24 +510,75 @@ class FinalCleanBrazilEcommerceDashboard:
                 showocean = True,
                 oceancolor = 'rgb(204, 229, 255)',
                 center=dict(lat=-14, lon=-55),
-                projection_scale=3.2,  # Zoom level lebih besar
+                projection_scale=2.5,  # Zoom level lebih kecil
                 lonaxis_range=[-75, -30],  # Batas longitude
                 lataxis_range=[-35, 5],    # Batas latitude
             ),
-            height = 600,  # Tinggi peta lebih besar
-            margin = dict(l=0, r=0, t=50, b=0)
+            height = 400,  # Tinggi peta lebih kecil
+            margin = dict(l=0, r=0, t=40, b=0)
         )
         
         return fig, state_data
     
+    def create_time_period_revenue_analysis(self, data):
+        """Membuat analisis revenue berdasarkan periode waktu - SATU PIE CHART"""
+        st.markdown("### 🕒 REVENUE BERDASARKAN PERIODE WAKTU")
+        
+        # Hitung revenue per periode waktu
+        time_period_data = data.groupby('time_period').agg({
+            'price': ['sum', 'count'],
+            'order_id': 'nunique',
+            'customer_unique_id': 'nunique'
+        }).round(2)
+        
+        time_period_data.columns = ['total_revenue', 'transaction_count', 'unique_orders', 'unique_customer_unique_ids']
+        time_period_data = time_period_data.reset_index()
+        
+        # Hitung rata-rata revenue per order
+        time_period_data['avg_revenue_per_order'] = (time_period_data['total_revenue'] / time_period_data['unique_orders']).round(2)
+        
+        # Urutkan berdasarkan urutan waktu yang logis
+        time_order = ['Dini Hari (00:00-06:00)', 'Pagi (06:00-12:00)', 'Siang (12:00-18:00)', 'Malam (18:00-24:00)']
+        time_period_data['time_period'] = pd.Categorical(time_period_data['time_period'], categories=time_order, ordered=True)
+        time_period_data = time_period_data.sort_values('time_period')
+        
+        # SATU PIE CHART untuk distribusi revenue
+        fig_pie_revenue = px.pie(
+            time_period_data,
+            values='total_revenue',
+            names='time_period',
+            color='time_period',
+            color_discrete_map={
+                'Dini Hari (00:00-06:00)': '#4e54c8',
+                'Pagi (06:00-12:00)': '#ff9a00',
+                'Siang (12:00-18:00)': '#38ef7d',
+                'Malam (18:00-24:00)': '#ff416c'
+            }
+        )
+        
+        fig_pie_revenue.update_traces(
+            textposition='inside',
+            textinfo='percent+label',
+            hovertemplate="<b>%{label}</b><br>Revenue: R$ %{value:,.0f}<br>Persentase: %{percent}",
+            textfont=dict(size=12)
+        )
+        
+        fig_pie_revenue.update_layout(
+            height=400,
+            showlegend=False,  # Sembunyikan legend karena sudah ada di pie chart
+            margin=dict(t=50, b=50, l=20, r=20)
+        )
+        
+        st.plotly_chart(fig_pie_revenue, use_container_width=True)
+    
     def display_spending_segments(self, data):
-        """Menampilkan segmentasi spending customer dengan % distribusi"""
-        # Hitung spending per customer
-        customer_spending = data.groupby('customer_unique_id').agg({
+        """Menampilkan segmentasi spending customer_unique_id dengan % distribusi"""
+        # Hitung spending per customer_unique_id
+        customer_unique_id_spending = data.groupby('customer_unique_id').agg({
             'price': 'sum'
         }).reset_index()
         
-        total_customers = len(customer_spending)
+        total_customer_unique_ids = len(customer_unique_id_spending)
         
         # Definisikan segmentasi
         def get_spending_segment(spending):
@@ -506,19 +592,19 @@ class FinalCleanBrazilEcommerceDashboard:
                 return 'VIP (> R$ 2000)'
         
         # Terapkan segmentasi
-        customer_spending['segment'] = customer_spending['price'].apply(get_spending_segment)
+        customer_unique_id_spending['segment'] = customer_unique_id_spending['price'].apply(get_spending_segment)
         
         # Hitung statistik per segment
-        segment_stats = customer_spending.groupby('segment').agg({
+        segment_stats = customer_unique_id_spending.groupby('segment').agg({
             'customer_unique_id': 'count',
             'price': ['sum', 'mean', 'median']
         }).round(2)
         
-        segment_stats.columns = ['customer_count', 'total_spending', 'avg_spending', 'median_spending']
+        segment_stats.columns = ['customer_unique_id_count', 'total_spending', 'avg_spending', 'median_spending']
         segment_stats = segment_stats.reset_index()
         
         # Hitung persentase
-        segment_stats['percentage'] = (segment_stats['customer_count'] / total_customers * 100).round(1)
+        segment_stats['percentage'] = (segment_stats['customer_unique_id_count'] / total_customer_unique_ids * 100).round(1)
         
         # Urutkan berdasarkan segment
         segment_order = ['Low (< R$ 100)', 'Medium (R$ 100-500)', 'High (R$ 500-2000)', 'VIP (> R$ 2000)']
@@ -544,7 +630,7 @@ class FinalCleanBrazilEcommerceDashboard:
                 <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
                     <div>
                         <div style="font-size: 0.9rem; color: #6c757d;">Customers</div>
-                        <div style="font-weight: bold; font-size: 1.2rem;">{row['customer_count']:,}</div>
+                        <div style="font-weight: bold; font-size: 1.2rem;">{row['customer_unique_id_count']:,}</div>
                     </div>
                     <div>
                         <div style="font-size: 0.9rem; color: #6c757d;">Total Spending</div>
@@ -559,78 +645,138 @@ class FinalCleanBrazilEcommerceDashboard:
             """, unsafe_allow_html=True)
     
     def display_repeat_purchase_analysis(self, data):
-        """Menampilkan analisis repeat purchase berdasarkan segment"""
-        # Hitung jumlah order per customer
-        customer_orders = data.groupby('customer_unique_id').agg({
+        """Menampilkan analisis repeat purchase berdasarkan segment - DIPERBAIKI"""
+        # Hitung jumlah order per customer_unique_id
+        customer_unique_id_orders = data.groupby('customer_unique_id').agg({
             'order_id': 'nunique',
             'price': 'sum'
         }).reset_index()
         
-        customer_orders.columns = ['customer_id', 'order_count', 'total_spending']
+        customer_unique_id_orders.columns = ['customer_unique_id', 'order_count', 'total_spending']
         
-        total_customers = len(customer_orders)
+        total_customer_unique_ids = len(customer_unique_id_orders)
         
-        # Definisikan segment repeat purchase
+        # Definisikan segment repeat purchase - DIPERBAIKI dengan penjelasan
         def get_repeat_segment(order_count):
             if order_count == 1:
-                return 'One-time'
+                return 'One-time Buyer'
             elif order_count <= 3:
-                return 'Occasional (2-3)'
+                return 'Occasional Buyer (2-3 orders)'
             elif order_count <= 10:
-                return 'Regular (4-10)'
+                return 'Regular Buyer (4-10 orders)'
             else:
-                return 'Frequent (>10)'
+                return 'Frequent Buyer (>10 orders)'
         
         # Terapkan segmentasi repeat purchase
-        customer_orders['repeat_segment'] = customer_orders['order_count'].apply(get_repeat_segment)
+        customer_unique_id_orders['repeat_segment'] = customer_unique_id_orders['order_count'].apply(get_repeat_segment)
         
         # Hitung statistik per segment repeat
-        repeat_stats = customer_orders.groupby('repeat_segment').agg({
-            'customer_id': 'count',
-            'order_count': 'mean',
+        repeat_stats = customer_unique_id_orders.groupby('repeat_segment').agg({
+            'customer_unique_id': 'count',
+            'order_count': ['mean', 'sum'],  # DITAMBAH: total semua orders
             'total_spending': ['sum', 'mean']
         }).round(2)
         
-        repeat_stats.columns = ['customer_count', 'avg_orders', 'total_spending', 'avg_spending']
+        # Flatten column names
+        repeat_stats.columns = [
+            'customer_unique_id_count', 
+            'avg_orders_per_customer_unique_id', 
+            'total_orders',
+            'total_spending', 
+            'avg_spending_per_customer_unique_id'
+        ]
         repeat_stats = repeat_stats.reset_index()
         
-        # Hitung persentase
-        repeat_stats['percentage'] = (repeat_stats['customer_count'] / total_customers * 100).round(1)
+        # Hitung persentase customer_unique_id dan spending
+        repeat_stats['customer_unique_id_percentage'] = (repeat_stats['customer_unique_id_count'] / total_customer_unique_ids * 100).round(1)
+        repeat_stats['spending_percentage'] = (repeat_stats['total_spending'] / customer_unique_id_orders['total_spending'].sum() * 100).round(1)
+        
+        # Hitung nilai lifetime customer_unique_id
+        repeat_stats['avg_lifetime_value'] = (repeat_stats['total_spending'] / repeat_stats['customer_unique_id_count']).round(2)
         
         # Urutkan berdasarkan order count (bukan alphabet)
-        repeat_order = ['One-time', 'Occasional (2-3)', 'Regular (4-10)', 'Frequent (>10)']
-        repeat_stats['repeat_segment'] = pd.Categorical(repeat_stats['repeat_segment'], categories=repeat_order, ordered=True)
+        repeat_order = [
+            'One-time Buyer', 
+            'Occasional Buyer (2-3 orders)', 
+            'Regular Buyer (4-10 orders)', 
+            'Frequent Buyer (>10 orders)'
+        ]
+        repeat_stats['repeat_segment'] = pd.Categorical(
+            repeat_stats['repeat_segment'], 
+            categories=repeat_order, 
+            ordered=True
+        )
         repeat_stats = repeat_stats.sort_values('repeat_segment')
         
-        # Tampilkan repeat purchase segments
+        # Tampilkan repeat purchase segments - DIPERBAIKI dengan metrik tambahan
         st.markdown("### 🔄 REPEAT PURCHASE SEGMENTS")
         
+        # Tampilkan summary metrics
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            repeat_rate = ((total_customer_unique_ids - repeat_stats.iloc[0]['customer_unique_id_count']) / total_customer_unique_ids * 100).round(1)
+            self.create_mini_metric(f"{repeat_rate}%", "Customer Repeat Rate", "🔄")
+        
+        with col2:
+            avg_orders = customer_unique_id_orders['order_count'].mean().round(2)
+            self.create_mini_metric(f"{avg_orders}", "Rata-rata Orders/Customer", "📊")
+        
+        with col3:
+            loyal_customer_unique_ids = repeat_stats[repeat_stats['repeat_segment'].isin(['Regular Buyer (4-10 orders)', 'Frequent Buyer (>10 orders)'])]['customer_unique_id_count'].sum()
+            loyal_percentage = (loyal_customer_unique_ids / total_customer_unique_ids * 100).round(1)
+            self.create_mini_metric(f"{loyal_percentage}%", "Loyal Customers", "⭐")
+        
+        with col4:
+            total_repeat_orders = repeat_stats['total_orders'].sum() - repeat_stats.iloc[0]['total_orders']
+            self.create_mini_metric(f"{total_repeat_orders:,}", "Total Repeat Orders", "📦")
+        
+        # Tampilkan segment cards dengan metrik yang lebih lengkap
         for idx, row in repeat_stats.iterrows():
             st.markdown(f"""
             <div class="repeat-card">
                 <div style="font-weight: bold; font-size: 1.1rem; margin-bottom: 0.5rem;">
-                    {row['repeat_segment']} <span style="font-size: 0.9rem; color: #6c757d;">({row['percentage']}%)</span>
+                    {row['repeat_segment']} 
+                    <span style="font-size: 0.9rem; color: #6c757d;">
+                        ({row['customer_unique_id_percentage']}% customers, {row['spending_percentage']}% revenue)
+                    </span>
                 </div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 1rem;">
                     <div>
                         <div style="font-size: 0.9rem; color: #6c757d;">Customers</div>
-                        <div style="font-weight: bold; font-size: 1.2rem;">{row['customer_count']:,}</div>
+                        <div style="font-weight: bold; font-size: 1.2rem;">{row['customer_unique_id_count']:,}</div>
                     </div>
                     <div>
-                        <div style="font-size: 0.9rem; color: #6c757d;">Avg Orders</div>
-                        <div style="font-weight: bold; font-size: 1.2rem;">{row['avg_orders']:.1f}</div>
+                        <div style="font-size: 0.9rem; color: #6c757d;">Total Orders</div>
+                        <div style="font-weight: bold; font-size: 1.2rem;">{row['total_orders']:,}</div>
                     </div>
                     <div>
                         <div style="font-size: 0.9rem; color: #6c757d;">Total Spending</div>
                         <div style="font-weight: bold; font-size: 1.2rem;">R$ {row['total_spending']:,.0f}</div>
                     </div>
                     <div>
-                        <div style="font-size: 0.9rem; color: #6c757d;">Avg/Person</div>
-                        <div style="font-weight: bold; font-size: 1.2rem;">R$ {row['avg_spending']:.2f}</div>
+                        <div style="font-size: 0.9rem; color: #6c757d;">LTV/Customer</div>
+                        <div style="font-weight: bold; font-size: 1.2rem;">R$ {row['avg_lifetime_value']:,.0f}</div>
                     </div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
+        
+        # Tambahkan insights
+        st.markdown("#### 💡 INSIGHTS REPEAT PURCHASE:")
+        
+        # Hitung beberapa metrics insight
+        one_time_customer_unique_ids = repeat_stats.iloc[0]['customer_unique_id_count']
+        repeat_customer_unique_ids = total_customer_unique_ids - one_time_customer_unique_ids
+        revenue_from_repeaters = repeat_stats['total_spending'].sum() - repeat_stats.iloc[0]['total_spending']
+        
+        col_insight1, col_insight2 = st.columns(2)
+        
+        with col_insight1:
+            st.info(f"**🔄 Customer Retention:** {repeat_customer_unique_ids:,} dari {total_customer_unique_ids:,} customers ({repeat_rate}%) melakukan repeat purchase")
+            
+        with col_insight2:
+            st.info(f"**💰 Revenue Impact:** Repeat customers menyumbang R$ {revenue_from_repeaters:,.0f} ({repeat_stats['spending_percentage'].sum() - repeat_stats.iloc[0]['spending_percentage']:.1f}%) dari total revenue")
     
     def display_state_ranking_vertical(self, data, score_type='review'):
         """Menampilkan ranking state secara vertikal"""
@@ -641,7 +787,9 @@ class FinalCleanBrazilEcommerceDashboard:
             state_col = 'nama_state'
         
         if score_type == 'review':
-            state_scores = data.groupby(state_col)['review_score'].mean().round(3).reset_index()
+            # PERBAIKAN: Filter out review_score = 0 sebelum menghitung rata-rata
+            valid_reviews = data[data['review_score'] > 0]
+            state_scores = valid_reviews.groupby(state_col)['review_score'].mean().round(3).reset_index()
             state_scores.columns = ['state', 'score']
         else:  # revenue
             state_scores = data.groupby(state_col).agg({'price': 'sum'}).round(0).reset_index()
@@ -694,15 +842,13 @@ class FinalCleanBrazilEcommerceDashboard:
         
         with col1:
             st.markdown("**📦 TOP 5 KATEGORI - REVIEW**")
-            # Review ranking
-            category_review = data.groupby('product_category_name_english')['review_score'].mean().round(3).reset_index()
+            # PERBAIKAN: Filter out review_score = 0 sebelum menghitung rata-rata
+            valid_reviews = data[data['review_score'] > 0]
+            category_review = valid_reviews.groupby('product_category_name_english')['review_score'].mean().round(3).reset_index()
             category_review = category_review[category_review['review_score'].notna()]
             category_review = category_review[category_review['product_category_name_english'].notna()]
             
-            # Filter hanya kategori dengan cukup data
-            category_counts = data.groupby('product_category_name_english').size()
-            valid_categories = category_counts[category_counts > 10].index
-            category_review = category_review[category_review['product_category_name_english'].isin(valid_categories)]
+            # 🚨 FILTER MINIMUM ORDER DIHAPUS - semua kategori akan ditampilkan
             
             top_5_review = category_review.nlargest(5, 'review_score')
             bottom_5_review = category_review.nsmallest(5, 'review_score')
@@ -729,6 +875,8 @@ class FinalCleanBrazilEcommerceDashboard:
             category_revenue = data.groupby('product_category_name_english')['price'].sum().round(0).reset_index()
             category_revenue = category_revenue[category_revenue['price'].notna()]
             category_revenue = category_revenue[category_revenue['product_category_name_english'].notna()]
+            
+            # 🚨 FILTER MINIMUM ORDER DIHAPUS - semua kategori akan ditampilkan
             
             top_5_revenue = category_revenue.nlargest(5, 'price')
             bottom_5_revenue = category_revenue.nsmallest(5, 'price')
@@ -768,27 +916,41 @@ class FinalCleanBrazilEcommerceDashboard:
         
         st.markdown("### 📈 KORELASI REVIEW SCORE DAN REVENUE")
         
-        # Aggregate data per kategori produk
-        category_data = data.groupby('product_category_name_english').agg({
-            'review_score': 'mean',
-            'price': 'sum',
-            'order_id': 'count'
-        }).round(3).reset_index()
+        # PERBAIKAN: Filter out review_score = 0 hanya untuk perhitungan review score, tapi revenue tetap semua data
+        valid_reviews = data[data['review_score'] > 0]
         
-        category_data.columns = ['category', 'avg_review', 'total_revenue', 'order_count']
+        # PERBAIKAN: Filter kategori dengan minimal 10 order - gunakan data lengkap untuk revenue
+        category_order_counts = data.groupby('product_category_name_english')['order_id'].nunique()  # Gunakan data lengkap
+        categories_with_min_orders = category_order_counts[category_order_counts >= 10].index.tolist()
         
-        # Filter kategori dengan cukup data (minimal 10 order)
-        category_data = category_data[category_data['order_count'] >= 10]
+        # Filter data untuk review (hanya yang valid) dan revenue (semua data)
+        # Untuk review: gunakan valid_reviews
+        # Untuk revenue: gabungkan data review valid dengan data revenue lengkap
+        review_data = valid_reviews[valid_reviews['product_category_name_english'].isin(categories_with_min_orders)]
+        revenue_data = data[data['product_category_name_english'].isin(categories_with_min_orders)]
+        
+        # Aggregate data per kategori produk - review dari data valid, revenue dari semua data
+        category_review = review_data.groupby('product_category_name_english')['review_score'].mean().round(3).reset_index()
+        category_revenue = revenue_data.groupby('product_category_name_english')['price'].sum().round(0).reset_index()
+        
+        # Gabungkan data review dan revenue
+        category_data = pd.merge(category_review, category_revenue, on='product_category_name_english', how='inner')
+        category_data.columns = ['category', 'avg_review', 'total_revenue']
+        
+        # Tambahkan order count dari data lengkap
+        order_counts = revenue_data.groupby('product_category_name_english')['order_id'].nunique().reset_index()
+        order_counts.columns = ['category', 'order_count']
+        category_data = pd.merge(category_data, order_counts, on='category', how='inner')
         
         if len(category_data) == 0:
-            st.warning("Tidak ada kategori dengan cukup data untuk analisis korelasi")
+            st.warning("Tidak ada kategori dengan minimal 10 order untuk analisis korelasi")
             return
         
         # Hitung korelasi
         correlation = category_data['avg_review'].corr(category_data['total_revenue'])
         
         # Tampilkan metrik korelasi
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         
         with col1:
             if correlation > 0.7:
@@ -817,9 +979,23 @@ class FinalCleanBrazilEcommerceDashboard:
         with col3:
             avg_review_all = category_data['avg_review'].mean()
             st.metric("Rata-rata Review Semua Kategori", f"{avg_review_all:.2f}")
+            
+        with col4:
+            # Tampilkan informasi tentang filter minimal order
+            total_categories = data['product_category_name_english'].nunique()  # Gunakan data lengkap
+            excluded_categories = total_categories - len(category_data)
+            st.metric(
+                "Kategori Dikecualikan", 
+                f"{excluded_categories}",
+                help="Kategori dengan kurang dari 10 order dikecualikan dari analisis"
+            )
+        
+        # Informasi tentang filter
+        st.info(f"📊 **Analisis ini hanya mencakup kategori dengan minimal 10 order.** Dari {total_categories} kategori total, {len(category_data)} kategori memenuhi kriteria ini.")
+        st.info("💰 **Revenue mencakup semua transaksi**, termasuk yang memiliki review score = 0.")
         
         # SCATTER PLOT 1: Semua Produk
-        st.markdown("#### 🔍 SCATTER PLOT: SEMUA KATEGORI PRODUK")
+        st.markdown("#### 🔍 SCATTER PLOT: SEMUA KATEGORI PRODUK (Min. 10 Order)")
         
         # Buat scatter plot tanpa trendline LOWESS
         fig_all = px.scatter(
@@ -833,7 +1009,7 @@ class FinalCleanBrazilEcommerceDashboard:
                 'total_revenue': ':,.0f',
                 'order_count': True
             },
-            title='Korelasi Review Score vs Revenue - Semua Kategori',
+            title='Korelasi Review Score vs Revenue - Semua Kategori (Min. 10 Order)',
             labels={
                 'avg_review': 'Rata-rata Review Score',
                 'total_revenue': 'Total Revenue (R$)',
@@ -875,7 +1051,7 @@ class FinalCleanBrazilEcommerceDashboard:
         st.plotly_chart(fig_all, use_container_width=True)
         
         # SCATTER PLOT 2: Top 5 Review dan Revenue
-        st.markdown("#### 🏆 SCATTER PLOT: TOP 5 KATEGORI REVIEW & REVENUE")
+        st.markdown("#### 🏆 SCATTER PLOT: TOP 5 KATEGORI REVIEW & REVENUE (Min. 10 Order)")
         
         # Ambil top 5 dari masing-masing kategori
         top_5_review_cats = category_data.nlargest(5, 'avg_review')['category'].tolist()
@@ -897,7 +1073,7 @@ class FinalCleanBrazilEcommerceDashboard:
                 'total_revenue': ':,.0f',
                 'order_count': True
             },
-            title='Korelasi Review Score vs Revenue - Top Kategori',
+            title='Korelasi Review Score vs Revenue - Top Kategori (Min. 10 Order)',
             labels={
                 'avg_review': 'Rata-rata Review Score',
                 'total_revenue': 'Total Revenue (R$)',
@@ -918,9 +1094,47 @@ class FinalCleanBrazilEcommerceDashboard:
         )
         
         st.plotly_chart(fig_top, use_container_width=True)
+    
+    def create_review_revenue_insights(self, data):
+        """Membuat insights terpisah untuk PERFORMER TERBAIK dan PELUANG BISNIS"""
+        if 'product_category_name_english' not in data.columns:
+            st.warning("Data kategori produk tidak tersedia untuk analisis insights")
+            return
         
-        # Tampilkan insights
-        st.markdown("#### 💡 INSIGHTS KORELASI")
+        st.markdown("### 💡 INSIGHTS REVIEW DAN REVENUE")
+        
+        # PERBAIKAN: Filter out review_score = 0 hanya untuk perhitungan review score, tapi revenue tetap semua data
+        valid_reviews = data[data['review_score'] > 0]
+        
+        # Filter kategori dengan minimal 10 order - gunakan data lengkap untuk revenue
+        category_order_counts = data.groupby('product_category_name_english')['order_id'].nunique()  # Gunakan data lengkap
+        categories_with_min_orders = category_order_counts[category_order_counts >= 10].index.tolist()
+        
+        # Filter data untuk review (hanya yang valid) dan revenue (semua data)
+        review_data = valid_reviews[valid_reviews['product_category_name_english'].isin(categories_with_min_orders)]
+        revenue_data = data[data['product_category_name_english'].isin(categories_with_min_orders)]
+        
+        # Aggregate data per kategori produk - review dari data valid, revenue dari semua data
+        category_review = review_data.groupby('product_category_name_english')['review_score'].mean().round(3).reset_index()
+        category_revenue = revenue_data.groupby('product_category_name_english')['price'].sum().round(0).reset_index()
+        
+        # Gabungkan data review dan revenue
+        category_data = pd.merge(category_review, category_revenue, on='product_category_name_english', how='inner')
+        category_data.columns = ['category', 'avg_review', 'total_revenue']
+        
+        # Tambahkan order count dari data lengkap
+        order_counts = revenue_data.groupby('product_category_name_english')['order_id'].nunique().reset_index()
+        order_counts.columns = ['category', 'order_count']
+        category_data = pd.merge(category_data, order_counts, on='category', how='inner')
+        
+        if len(category_data) == 0:
+            st.warning("Tidak ada kategori dengan minimal 10 order untuk analisis insights")
+            return
+        
+        # Informasi tentang data yang digunakan
+        st.info("📊 **Analisis ini hanya mencakup kategori dengan minimal 10 order.**")
+        st.info("⭐ **Review Score**: Hanya menghitung review dengan score > 0")
+        st.info("💰 **Revenue**: Mencakup semua transaksi, termasuk yang memiliki review score = 0")
         
         # Cari produk dengan performa terbaik (review tinggi & revenue tinggi)
         best_performers = category_data[
@@ -937,22 +1151,56 @@ class FinalCleanBrazilEcommerceDashboard:
         col_insight1, col_insight2 = st.columns(2)
         
         with col_insight1:
-            st.markdown("**✅ PERFORMER TERBAIK**")
-            st.markdown("Kategori dengan review tinggi dan revenue tinggi:")
+            st.markdown("#### ✅ PERFORMER TERBAIK")
+            st.markdown("Kategori dengan **review tinggi** dan **revenue tinggi**:")
             if len(best_performers) > 0:
-                for _, product in best_performers.head(3).iterrows():
-                    st.markdown(f"- **{product['category']}**")
-                    st.markdown(f"  ⭐ {product['avg_review']:.2f} | 💰 R$ {product['total_revenue']:,.0f}")
+                for _, product in best_performers.head(5).iterrows():
+                    st.markdown(f"""
+                    <div style="background: linear-gradient(90deg, #d4edda, white); padding: 1rem; border-radius: 8px; margin-bottom: 0.5rem; border-left: 4px solid #28a745;">
+                        <div style="font-weight: bold; font-size: 1.1rem; color: #155724;">{product['category']}</div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem; margin-top: 0.5rem;">
+                            <div>
+                                <div style="font-size: 0.8rem; color: #6c757d;">Review Score</div>
+                                <div style="font-weight: bold; color: #28a745;">⭐ {product['avg_review']:.2f}</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.8rem; color: #6c757d;">Revenue</div>
+                                <div style="font-weight: bold; color: #007bff;">💰 R$ {product['total_revenue']:,.0f}</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.8rem; color: #6c757d;">Orders</div>
+                                <div style="font-weight: bold; color: #6c757d;">📦 {product['order_count']}</div>
+                            </div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
             else:
                 st.markdown("*Tidak ada kategori yang masuk kriteria*")
         
         with col_insight2:
-            st.markdown("**🎯 PELUANG BISNIS**")
-            st.markdown("Kategori dengan review tinggi tapi revenue rendah:")
+            st.markdown("#### 🎯 PELUANG BISNIS")
+            st.markdown("Kategori dengan **review tinggi** tapi **revenue rendah**:")
             if len(high_review_low_revenue) > 0:
-                for _, product in high_review_low_revenue.head(3).iterrows():
-                    st.markdown(f"- **{product['category']}**")
-                    st.markdown(f"  ⭐ {product['avg_review']:.2f} | 💰 R$ {product['total_revenue']:,.0f}")
+                for _, product in high_review_low_revenue.head(5).iterrows():
+                    st.markdown(f"""
+                    <div style="background: linear-gradient(90deg, #fff3cd, white); padding: 1rem; border-radius: 8px; margin-bottom: 0.5rem; border-left: 4px solid #ffc107;">
+                        <div style="font-weight: bold; font-size: 1.1rem; color: #856404;">{product['category']}</div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem; margin-top: 0.5rem;">
+                            <div>
+                                <div style="font-size: 0.8rem; color: #6c757d;">Review Score</div>
+                                <div style="font-weight: bold; color: #28a745;">⭐ {product['avg_review']:.2f}</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.8rem; color: #6c757d;">Revenue</div>
+                                <div style="font-weight: bold; color: #dc3545;">💰 R$ {product['total_revenue']:,.0f}</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.8rem; color: #6c757d;">Orders</div>
+                                <div style="font-weight: bold; color: #6c757d;">📦 {product['order_count']}</div>
+                            </div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
             else:
                 st.markdown("*Tidak ada kategori yang masuk kriteria*")
     
@@ -1003,13 +1251,16 @@ class FinalCleanBrazilEcommerceDashboard:
             st.markdown("### 📦 PRODUCT PERFORMANCE ANALYSIS")
             
             # Tab untuk product analysis
-            subtab1, subtab2 = st.tabs(["🏆 PRODUCT RANKINGS", "📈 REVIEW-REVENUE CORRELATION"])
+            subtab1, subtab2, subtab3 = st.tabs(["🏆 PRODUCT RANKINGS", "📈 REVIEW-REVENUE CORRELATION", "💡 INSIGHTS REVIEW-REVENUE"])
             
             with subtab1:
                 self.display_product_rankings(filtered_data)
             
             with subtab2:
                 self.create_review_revenue_correlation_analysis(filtered_data)
+            
+            with subtab3:
+                self.create_review_revenue_insights(filtered_data)
         
         with tab4:
             # Metrics untuk customer spending
@@ -1017,10 +1268,17 @@ class FinalCleanBrazilEcommerceDashboard:
             
             st.markdown("---")
             
-            # Layout untuk customer analysis - FULL WIDTH untuk peta
-            st.markdown("**🗺️ PETA SPENDING PER CUSTOMER - BRAZIL**")
-            fig, state_data = self.create_customer_spending_map(filtered_data)
-            st.plotly_chart(fig, use_container_width=True)
+            # Layout untuk customer analysis - BERDAMPINGAN
+            col_map, col_time = st.columns([2, 1])
+            
+            with col_map:
+                st.markdown("**🗺️ PETA SPENDING PER CUSTOMER - BRAZIL**")
+                fig, state_data = self.create_customer_spending_map(filtered_data)
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with col_time:
+                # Tambahkan analisis revenue berdasarkan waktu di sini
+                self.create_time_period_revenue_analysis(filtered_data)
             
             # Spending segments dan repeat purchase analysis di bawah peta
             col1, col2 = st.columns(2)
